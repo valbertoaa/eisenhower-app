@@ -27,5 +27,6 @@ public class EisenhowerMatrixApp {
 
         // Libera os recursos do display
         display.dispose();
+        // A titulo de teste add comentário aqui.
     }
 }
