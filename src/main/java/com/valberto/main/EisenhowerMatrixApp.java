@@ -25,8 +25,7 @@ public class EisenhowerMatrixApp {
             }
         }
 
-        // Libera os recursos do display
-        // testando aqui o git
+        // Libera os recursos do display        
         display.dispose();
     }
 }
