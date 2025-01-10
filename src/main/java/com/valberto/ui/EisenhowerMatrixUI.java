@@ -1,155 +1,178 @@
 package com.valberto.ui;
 
 import org.eclipse.swt.SWT;
-import org.eclipse.swt.layout.FillLayout;
-import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.dnd.*;
+import org.eclipse.swt.layout.*;
 import org.eclipse.swt.widgets.*;
 import com.valberto.database.TaskDAO;
 import com.valberto.model.Task;
-import com.valberto.util.DiscordWebhook;
 
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 public class EisenhowerMatrixUI {
     private Shell shell;
-    private Composite mainComposite; // Conteúdo principal
-    private org.eclipse.swt.widgets.List[] quadrants; // Quadrantes
-    private Label statusBar; // Rodapé
+    private Composite mainComposite;
+    private Label footerLabel; // Rodapé
+    private Map<String, org.eclipse.swt.widgets.List> quadrantLists = new HashMap<>();
 
     public EisenhowerMatrixUI(Shell shell) {
         this.shell = shell;
     }
 
-    public Composite getMainComposite() {
-        return mainComposite;
-    }
-
     public void createUI() {
-        if (mainComposite != null && !mainComposite.isDisposed()) {
-            return; // Evita recriação da interface
-        }
+        shell.setLayout(new GridLayout(1, false)); // Layout para incluir o rodapé
 
-        shell.setLayout(new FillLayout()); // Define o layout do Shell
+        // Criar a barra de menu
+        MenuBarUI menuBar = new MenuBarUI(shell, this);
+        menuBar.createMenu();
 
+        // Criar o layout principal
         mainComposite = new Composite(shell, SWT.NONE);
-        GridLayout gridLayout = new GridLayout(1, false);
-        gridLayout.marginWidth = 5;
-        gridLayout.marginHeight = 5;
-        mainComposite.setLayout(gridLayout);
+        mainComposite.setLayout(new GridLayout(2, true));
+        mainComposite.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
-        createMenuBar();
+        // Criação dos quadrantes
+        createQuadrant("Urgente e Importante");
+        createQuadrant("Não Urgente, mas Importante");
+        createQuadrant("Urgente, mas Não Importante");
+        createQuadrant("Nem Urgente, Nem Importante");
 
-        Composite quadrantsComposite = new Composite(mainComposite, SWT.NONE);
-        quadrantsComposite.setLayout(new GridLayout(2, true));
-        quadrantsComposite.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+        // Carregar as tarefas iniciais
+        loadTasks();
 
-        quadrants = new org.eclipse.swt.widgets.List[4];
-        quadrants[0] = createQuadrant(quadrantsComposite, "Urgente e Importante");
-        quadrants[1] = createQuadrant(quadrantsComposite, "Não Urgente, mas Importante");
-        quadrants[2] = createQuadrant(quadrantsComposite, "Urgente, mas Não Importante");
-        quadrants[3] = createQuadrant(quadrantsComposite, "Nem Urgente, Nem Importante");
-
-        statusBar = new Label(mainComposite, SWT.BORDER);
-        statusBar.setText("Carregando tarefas...");
-        statusBar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-        loadTasksFromDatabase();
-        shell.layout(true, true);
+        // Criar o rodapé
+        createFooter();
     }
 
-    private void createMenuBar() {
-        Menu menuBar = new Menu(shell, SWT.BAR);
-        shell.setMenuBar(menuBar);
+    private void createQuadrant(String title) {
+        Group group = new Group(mainComposite, SWT.NONE);
+        group.setText(title);
+        group.setLayout(new GridLayout());
+        group.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
-        MenuItem menuCadastros = new MenuItem(menuBar, SWT.CASCADE);
-        menuCadastros.setText("Cadastros");
-        Menu cadastrosMenu = new Menu(shell, SWT.DROP_DOWN);
-        menuCadastros.setMenu(cadastrosMenu);
+        org.eclipse.swt.widgets.List taskList = new org.eclipse.swt.widgets.List(group, SWT.BORDER | SWT.V_SCROLL);
+        taskList.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
-        MenuItem incluirTarefa = new MenuItem(cadastrosMenu, SWT.PUSH);
-        incluirTarefa.setText("Incluir Tarefas");
-        incluirTarefa.addListener(SWT.Selection, event -> {
-            TaskRegistrationUI taskRegistration = new TaskRegistrationUI(shell, this);
-            taskRegistration.open();
+        // Habilitar Drag and Drop
+        enableDragAndDrop(taskList, title);
+
+        quadrantLists.put(title, taskList);
+    }
+
+    private void enableDragAndDrop(org.eclipse.swt.widgets.List taskList, String currentQuadrant) {
+        // Drag Source
+        DragSource dragSource = new DragSource(taskList, DND.DROP_MOVE);
+        dragSource.setTransfer(new Transfer[]{TextTransfer.getInstance()});
+        dragSource.addDragListener(new DragSourceAdapter() {
+            @Override
+            public void dragSetData(DragSourceEvent event) {
+                int selectedIndex = taskList.getSelectionIndex();
+                if (selectedIndex >= 0) {
+                    event.data = taskList.getItem(selectedIndex);
+                }
+            }
+
+            @Override
+            public void dragFinished(DragSourceEvent event) {
+                if (event.detail == DND.DROP_MOVE) {
+                    int selectedIndex = taskList.getSelectionIndex();
+                    if (selectedIndex >= 0) {
+                        taskList.remove(selectedIndex);
+                    }
+                }
+            }
         });
 
-        MenuItem alterarTarefa = new MenuItem(cadastrosMenu, SWT.PUSH);
-        alterarTarefa.setText("Manutenção de Tarefas");
-        alterarTarefa.addListener(SWT.Selection, event -> {
-            TaskManagementUI taskManagement = new TaskManagementUI(shell, this);
-            taskManagement.open();
-        });
+        // Drop Target
+        DropTarget dropTarget = new DropTarget(taskList, DND.DROP_MOVE);
+        dropTarget.setTransfer(new Transfer[]{TextTransfer.getInstance()});
+        dropTarget.addDropListener(new DropTargetAdapter() {
+            @Override
+            public void drop(DropTargetEvent event) {
+                if (event.data != null) {
+                    String taskData = (String) event.data;
+                    taskList.add(taskData);
 
-        MenuItem menuRelatorios = new MenuItem(menuBar, SWT.CASCADE);
-        menuRelatorios.setText("Relatórios");
-        Menu relatoriosMenu = new Menu(shell, SWT.DROP_DOWN);
-        menuRelatorios.setMenu(relatoriosMenu);
-
-        MenuItem relatorioItem = new MenuItem(relatoriosMenu, SWT.PUSH);
-        relatorioItem.setText("Relatório de Tarefas");
-        relatorioItem.addListener(SWT.Selection, event -> {
-            MessageBox messageBox = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
-            messageBox.setText("Relatórios");
-            messageBox.setMessage("A funcionalidade de relatórios será implementada.");
-            messageBox.open();
+                    // Atualizar o banco de dados
+                    updateTaskQuadrant(taskData, currentQuadrant);
+                }
+            }
         });
     }
 
-    public void reloadTasks() {
-        loadTasksFromDatabase();
+    private void updateTaskQuadrant(String taskData, String newQuadrant) {
+        try {
+            // Extrai o ID da tarefa (supõe que o ID está no início do texto)
+            int taskId = extractTaskId(taskData);
+            TaskDAO taskDAO = new TaskDAO();
+            Task task = taskDAO.getTaskById(taskId);
+
+            if (task != null) {
+                task.setQuadrant(newQuadrant);
+                taskDAO.updateTask(task);
+            }
+        } catch (SQLException | NumberFormatException ex) {
+            ex.printStackTrace();
+            showMessage("Erro", "Falha ao atualizar a tarefa no banco de dados.");
+        }
     }
 
-    private void loadTasksFromDatabase() {
+    private int extractTaskId(String taskData) throws NumberFormatException {
+        String[] parts = taskData.split(" - ", 2);
+        return Integer.parseInt(parts[0]);
+    }
+
+    private void loadTasks() {
         try {
             TaskDAO taskDAO = new TaskDAO();
             List<Task> tasks = taskDAO.getAllTasks();
 
-            for (org.eclipse.swt.widgets.List quadrant : quadrants) {
-                quadrant.removeAll();
-            }
-
             for (Task task : tasks) {
-                int quadrantIndex = getQuadrantIndex(task.getQuadrant());
-                if (quadrantIndex >= 0 && quadrantIndex < quadrants.length) {
-                    quadrants[quadrantIndex].add(task.toString());
+                String quadrant = task.getQuadrant();
+                if (quadrantLists.containsKey(quadrant)) {
+                    quadrantLists.get(quadrant).add(task.toString());
                 }
             }
-
-            statusBar.setText("Tarefas carregadas com sucesso!");
-            
-            //DiscordWebhook.sendMessage("Nova tarefa adicionada: Estudar integração com Discord!");
-            
         } catch (SQLException ex) {
             ex.printStackTrace();
-            statusBar.setText("Erro ao carregar tarefas.");
+            showMessage("Erro", "Falha ao carregar as tarefas.");
         }
     }
 
-    private int getQuadrantIndex(String quadrant) {
-        switch (quadrant) {
-            case "Urgente e Importante":
-                return 0;
-            case "Não Urgente, mas Importante":
-                return 1;
-            case "Urgente, mas Não Importante":
-                return 2;
-            case "Nem Urgente, Nem Importante":
-                return 3;
-            default:
-                return -1;
+    public void reloadTasks() {
+        // Limpa os quadrantes existentes
+        quadrantLists.values().forEach(org.eclipse.swt.widgets.List::removeAll);
+
+        // Recarrega as tarefas do banco de dados
+        loadTasks();
+
+        // Atualiza o rodapé
+        updateFooter("Tarefas recarregadas com sucesso!");
+    }
+
+    private void createFooter() {
+        footerLabel = new Label(shell, SWT.BORDER);
+        footerLabel.setText("Pronto");
+        footerLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+    }
+
+    private void updateFooter(String message) {
+        if (footerLabel != null && !footerLabel.isDisposed()) {
+            footerLabel.setText(message);
         }
     }
 
-    private org.eclipse.swt.widgets.List createQuadrant(Composite parent, String title) {
-        Group group = new Group(parent, SWT.NONE);
-        group.setText(title);
-        group.setLayout(new FillLayout());
+    private void showMessage(String title, String message) {
+        MessageBox messageBox = new MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
+        messageBox.setText(title);
+        messageBox.setMessage(message);
+        messageBox.open();
+    }
 
-        GridData gridData = new GridData(SWT.FILL, SWT.FILL, true, true);
-        group.setLayoutData(gridData);
-
-        return new org.eclipse.swt.widgets.List(group, SWT.BORDER | SWT.V_SCROLL);
+    public Composite getMainComposite() {
+        return mainComposite;
     }
 }
