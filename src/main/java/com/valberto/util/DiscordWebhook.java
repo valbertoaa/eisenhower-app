@@ -5,7 +5,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 public class DiscordWebhook {
-    private static final String WEBHOOK_URL = "https://discordapp.com/api/webhooks/1325872025822040137/wd0WvVVUv3mfZj1VCWMVL_fyHO8UygdVvJakdgmaYEC5szofEo_I3dhWQMZfQJ9t1rXD";
+    private static final String WEBHOOK_URL = "aqui url webhook";
 
     @SuppressWarnings("deprecation")
     
